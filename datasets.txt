@@ -1,0 +1,7 @@
+https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/blob/master/csic_2010/
+
+https://www.kaggle.com/datasets/sajid576/sql-injection-dataset
+
+https://www.kaggle.com/datasets/saurabhshahane/xss-attacks-dataset/code
+
+https://www.kaggle.com/datasets/syedsaqlainhussain/cross-site-scripting-xss-dataset-for-deep-learning
