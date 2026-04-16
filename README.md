@@ -1,6 +1,6 @@
 # WAF Dataset Pipeline — Detecção de Ataques Web com IA
 
-Pipeline completo para construção, processamento e treinamento de um modelo **Random Forest** capaz de classificar requisições HTTP como `benign`, `sqli` ou `xss`. Desenvolvido como parte de TCC de Segurança da Informação.
+Pipeline completo para construção, processamento e treinamento de um modelo **Random Forest** capaz de classificar requisições HTTP como `benign`, `sqli` ou `xss`.
 
 ---
 
