@@ -2,19 +2,23 @@
 
 Pipeline completo para construção, processamento e treinamento de um modelo **Random Forest** capaz de classificar requisições HTTP como `benign`, `sqli` ou `xss`.
 
+**Versão atual do dataset: v2** — veja [DATASET_DOC_v2.md](DATASET_DOC_v2.md) para documentação completa.
+
 ---
 
-## Resultados do Modelo
+## Resultados do Modelo (v2)
 
 | Métrica | Target | Resultado | Status |
 |---------|--------|-----------|--------|
-| Recall SQLi | ≥ 95% | **99.52%** | ✅ |
-| Recall XSS | ≥ 95% | **99.70%** | ✅ |
-| Falsos Positivos (FPR) | ≤ 0.5% | **0.26%** | ✅ |
+| Recall SQLi | ≥ 95% | **99.43%** | ✅ |
+| Recall XSS | ≥ 95% | **99.86%** | ✅ |
+| Falsos Positivos (FPR) | ≤ 0.5% | **0.43%** | ✅ |
 | F1 Macro | ≥ 95% | **99.48%** | ✅ |
-| Latência p95 | ≤ 50ms | **57.29ms** | ⚠️ aceitável |
+| Latência p95 | ≤ 50ms | **78.7ms** | ⚠️ acima do alvo* |
 
-> Dataset: **464.700 amostras** — 70% treino / 15% validação / 15% teste.
+> \* Latência medida em CPU com `n_jobs=2`. Redutível com menos estimadores sem impacto relevante nas métricas de qualidade.
+
+> Dataset: **708.625 amostras** (pós-curadoria) — 70% treino / 15% validação / 15% teste.
 
 ---
 
@@ -38,16 +42,16 @@ dataset_pipeline/
 ├── 04_train_validate.py   # Treino do Random Forest + cross-validation
 ├── 05_fp_analysis.py      # Análise de falsos positivos
 ├── 06_export_dataset.py   # Exportação do dataset final em CSV
-├── wafahell_integration.py # Integração com WAF
 ├── requirements.txt
-├── run_pipeline.sh        # Script para rodar todo o pipeline de uma vez
+├── DATASET_DOC_v2.md      # Documentação completa do dataset (v2)
 │
 ├── data/
 │   ├── raw/               # Datasets de origem (não versionados — veja abaixo)
+│   │   └── seclists/      # Clone sparse do SecLists (não versionado)
 │   ├── interim/           # Dados intermediários gerados (não versionados)
 │   └── processed/         # Features e splits finais (não versionados)
 │
-├── models/                # Modelos treinados (não versionados)
+├── models/                # Modelos treinados (Git LFS — veja abaixo)
 └── reports/               # Métricas e análise de falsos positivos
     ├── metrics_test.json
     └── false_positives.csv
@@ -58,135 +62,144 @@ dataset_pipeline/
 ## Pré-requisitos
 
 - Python 3.10 ou superior
-- ~4 GB de RAM disponível (para o dataset completo)
+- ~6 GB de RAM disponível durante o treino
+- ~3 GB de espaço em disco para os dados intermediários e modelo
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Dependências principais:
-
-```
-pandas==2.2.2
-numpy==1.26.4
-scikit-learn==1.5.0
-scipy==1.13.1
-faker==25.2.0
-joblib==1.4.2
-imbalanced-learn==0.12.3
-```
-
 ---
 
-## Dados de Origem (obtidos separadamente)
+## Reprodução do Treinamento do Zero
 
-Os arquivos de dados **não estão versionados** no repositório por serem muito grandes. Coloque-os em `data/raw/` antes de rodar o pipeline:
+Para reproduzir o treinamento completo a partir dos dados originais, siga os passos abaixo **em ordem**.
 
-| Arquivo | Fonte | Download |
-|---------|-------|----------|
-| `sqli_biggest.csv` | Kaggle — gambleryu | [Link](https://www.kaggle.com/datasets/gambleryu/biggest-sql-injection-dataset) |
-| `sqli_dataset.csv` | Kaggle — sajid576 | [Link](https://www.kaggle.com/datasets/sajid576/sql-injection-dataset) |
-| `xss_dataset.csv` | Kaggle — syedsaqlainhussain | [Link](https://www.kaggle.com/datasets/syedsaqlainhussain/cross-site-scripting-xss-dataset-for-deep-learning) |
-| `normalTrafficTraining.txt` | CSIC 2010 HTTP Dataset | [Link](https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/blob/master/csic_2010/) |
-| `normalTrafficTest.txt` | CSIC 2010 HTTP Dataset | [Link](https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/blob/master/csic_2010/) |
-| `anomalousTrafficTest.txt` | CSIC 2010 HTTP Dataset | [Link](https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/blob/master/csic_2010/) |
+### Passo 1 — Obter os datasets de origem
 
-> Os arquivos do CSIC 2010 também estão disponíveis no arquivo `datasets.txt` com os links de referência.
+Os arquivos raw **não estão versionados** no repositório (licença Kaggle proíbe redistribuição; CSIC 2010 requer cadastro). Baixe-os manualmente e coloque em `data/raw/`:
 
----
+| Arquivo esperado | Fonte | Link |
+|-----------------|-------|------|
+| `data/raw/sqli_biggest.csv` | Kaggle — gambleryu | [biggest-sql-injection-dataset](https://www.kaggle.com/datasets/gambleryu/biggest-sql-injection-dataset) |
+| `data/raw/sqli_dataset.csv` | Kaggle — sajid576 | [sql-injection-dataset](https://www.kaggle.com/datasets/sajid576/sql-injection-dataset) |
+| `data/raw/xss_dataset.csv` | Kaggle — syedsaqlainhussain | [cross-site-scripting-xss-dataset-for-deep-learning](https://www.kaggle.com/datasets/syedsaqlainhussain/cross-site-scripting-xss-dataset-for-deep-learning) |
+| `data/raw/normalTrafficTraining.txt` | CSIC 2010 HTTP Dataset | [gitlab.fing.edu.uy](https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/blob/master/csic_2010/) |
+| `data/raw/normalTrafficTest.txt` | CSIC 2010 HTTP Dataset | [gitlab.fing.edu.uy](https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/blob/master/csic_2010/) |
+| `data/raw/anomalousTrafficTest.txt` | CSIC 2010 HTTP Dataset | [gitlab.fing.edu.uy](https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/blob/master/csic_2010/) |
 
-## Como Rodar o Pipeline
+### Passo 2 — Clonar o SecLists (sparse checkout)
 
-### Opção 1 — Script completo (Linux/macOS)
+O SecLists é clonado diretamente em `data/raw/seclists/` usando sparse checkout para baixar apenas as pastas de XSS e SQLi (~20 MB em vez do repositório completo de ~1 GB):
 
 ```bash
-chmod +x run_pipeline.sh
-./run_pipeline.sh
+cd data/raw
+git clone --depth=1 --filter=blob:none --sparse https://github.com/danielmiessler/SecLists seclists
+cd seclists
+git sparse-checkout set "Fuzzing/XSS" "Fuzzing/Databases/SQLi"
+cd ../../..
 ```
 
-### Opção 2 — Passo a passo (Windows ou qualquer OS)
-
-Execute os scripts em ordem:
+### Passo 3 — Instalar dependências
 
 ```bash
-# 1. Coleta: lê data/raw/ e gera data/interim/01_raw_combined.csv
+pip install -r requirements.txt
+```
+
+### Passo 4 — Executar o pipeline
+
+Execute os estágios em ordem. **Tempo estimado total: 2–3 horas** (o estágio 4 é o mais longo).
+
+```bash
+# Estágio 1 — Coleta (~2 min)
+# Lê data/raw/, gera data/interim/01_raw_combined.csv (~649k amostras)
 python 01_collect.py
 
-# 2. Curadoria: normaliza payloads, remove duplicatas, gera variantes
-#    Entrada: data/interim/01_raw_combined.csv
-#    Saída:   data/interim/02_curated.csv
+# Estágio 2 — Curadoria (~5 min)
+# Limpeza, dedup, variantes ofuscadas
+# Saída: data/interim/02_curated.csv (~708k amostras)
 python 02_curate.py
 
-# 3. Features: extrai TF-IDF (word + char) + 15 features manuais
-#    Saída: data/processed/X.npz, data/processed/y.csv
-#           models/word_tfidf.joblib, models/char_tfidf.joblib
-#           models/manual_scaler.joblib, models/feature_scaler.joblib
+# Estágio 3 — Features (~15 min, uso intenso de RAM)
+# TF-IDF word (8k) + char (12k) + 15 features manuais = 20.015 dims
+# Saída: data/processed/X.npz (~1 GB), data/processed/y.csv
+#        models/word_tfidf.joblib, models/char_tfidf.joblib
+#        models/manual_scaler.joblib, models/feature_scaler.joblib
 python 03_features.py
 
-# 4. Treino: Random Forest (300 árvores) + cross-validation (k=3)
-#    Saída: models/random_forest.joblib, reports/metrics_test.json
-#           data/processed/indices_{train,val,test}.npy
+# Estágio 4 — Treino (~90 min com n_jobs=2, mais rápido com mais CPUs)
+# Random Forest 300 árvores + cross-validation k=3
+# Saída: models/random_forest.joblib, reports/metrics_test.json
 python 04_train_validate.py
 
-# 5. Análise de falsos positivos no conjunto de validação
-#    Saída: reports/false_positives.csv
+# Estágio 5 — Análise de falsos positivos (~2 min)
+# Saída: reports/false_positives.csv
 python 05_fp_analysis.py
 
-# 6. Exportação dos splits finais em CSV com todas as features
-#    Saída: data/processed/dataset_{train,val,test}.csv
+# Estágio 6 — Exportação (~3 min)
+# Saída: data/processed/dataset_{train,val,test}.csv
 python 06_export_dataset.py
 ```
+
+> **Windows:** todos os comandos acima funcionam no PowerShell ou CMD. Não há dependência de bash.
+
+### Usando o modelo treinado sem reprocessar
+
+Se o repositório já inclui os arquivos em `models/` via Git LFS, o `waf_app` funciona diretamente sem rodar o pipeline. Basta:
+
+```bash
+cd ../waf_app
+pip install -r requirements.txt   # se ainda não instalou
+python interactive_test.py         # teste interativo via CLI
+# ou
+uvicorn app:app --reload           # API FastAPI em http://localhost:8000
+```
+
+---
+
+## Fontes de Dados (v2)
+
+| Fonte | Tipo | Classe | Amostras |
+|-------|------|--------|----------|
+| Kaggle — sqli_biggest | Real | sqli | 148.326 |
+| Kaggle — sqli_dataset | Real | sqli | 30.919 |
+| CSIC 2010 anomalous | Real | sqli | 25.065 |
+| Kaggle — xss_dataset | Real | xss | 13.686 |
+| CSIC 2010 normal | Real | benign | 72.000 |
+| Geração sintética (Faker, 180 templates) | Sintético | benign | 150.000 |
+| Augmentação XSS (12 categorias documentadas) | Sintético | xss | 200.000 |
+| SecLists XSS (20 arquivos, dedup) | Real | xss | 9.868 |
+| SecLists SQLi (9 arquivos, dedup) | Real | sqli | 479 |
+| **Total pós-coleta** | | | **649.653** |
 
 ---
 
 ## Features Extraídas (Estágio 3)
 
-O modelo utiliza **features híbridas** — representações textuais + features de engenharia manual:
-
-| Grupo | Descrição |
-|-------|-----------|
-| **Word TF-IDF** | Vetorização por tokens (n-gram 1-2), top 50.000 features |
-| **Char TF-IDF** | Vetorização por caracteres (n-gram 2-5), top 30.000 features |
-| **Comprimento** | `len(payload)` normalizado |
-| **Contagens de símbolos** | `'`, `"`, `<`, `>`, `;`, `(`, `%`, `--`, `/*` |
-| **Keywords SQL** | Contagem de: SELECT, UNION, INSERT, DROP, UPDATE, DELETE, WHERE... |
-| **Keywords XSS** | Contagem de: `<script`, `javascript:`, `onerror`, `onload`... |
-| **Padrões regex** | `\d+=\d+` (1=1), `<script`, event handlers `on*=` |
-
----
-
-## Fontes de Dados
-
-O dataset foi construído com foco em **minimizar a taxa de falsos positivos**, combinando:
-
-- **148.326** payloads SQLi — Kaggle (gambleryu)
-- **30.919** payloads SQLi — Kaggle (sajid576)
-- **13.686** payloads XSS — Kaggle (syedsaqlainhussain)
-- **97.065** requisições reais — CSIC 2010 (benign + anomalous)
-- **100.000** requisições sintéticas — geradas com Faker `pt_BR` (seed=42), cobrindo 66 padrões que causam falsos positivos em WAFs tradicionais
+| Grupo | Dimensões | Descrição |
+|-------|-----------|-----------|
+| Word TF-IDF | 8.000 | Unigramas e bigramas de palavras, `sublinear_tf=True` |
+| Char TF-IDF | 12.000 | Char n-grams (3–5), `analyzer="char_wb"` |
+| Features manuais | 15 | Contagens de símbolos, keywords SQL/XSS, padrões regex |
+| **Total** | **20.015** | Matriz esparsa CSR, normalizada com `MaxAbsScaler` |
 
 ---
 
 ## Saídas do Pipeline
 
-Após rodar todos os estágios:
-
 | Arquivo | Conteúdo |
 |---------|----------|
-| `models/random_forest.joblib` | Modelo treinado |
+| `models/random_forest.joblib` | Modelo treinado (227 MB) |
 | `models/word_tfidf.joblib` | Vetorizador Word TF-IDF |
 | `models/char_tfidf.joblib` | Vetorizador Char TF-IDF |
-| `models/feature_scaler.joblib` | Scaler de features combinadas |
-| `models/manual_scaler.joblib` | Scaler de features manuais |
+| `models/feature_scaler.joblib` | Scaler global (MaxAbsScaler) |
+| `models/manual_scaler.joblib` | Scaler das features manuais |
 | `reports/metrics_test.json` | Métricas completas no conjunto de teste |
 | `reports/false_positives.csv` | Amostras benignas classificadas incorretamente |
-| `data/processed/dataset_train.csv` | Split de treino com payload + features |
-| `data/processed/dataset_val.csv` | Split de validação |
-| `data/processed/dataset_test.csv` | Split de teste |
+| `data/processed/dataset_{train,val,test}.csv` | Splits finais |
 
 ---
 
 ## Documentação Adicional
 
-- [DATASET_DOC.md](DATASET_DOC.md) — Documentação completa das fontes de dados, processo de curadoria e design decisions
-- [MODEL_RESULTS.md](MODEL_RESULTS.md) — Resultados detalhados: cross-validation, matriz de confusão, análise de falsos positivos
+- [DATASET_DOC_v2.md](DATASET_DOC_v2.md) — Documentação completa: fontes, pipeline, features, métricas, análise de falsos positivos e limitações conhecidas
