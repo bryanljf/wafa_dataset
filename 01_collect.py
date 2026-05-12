@@ -159,8 +159,135 @@ def load_csic_files():
 
 
 # ---------------------------------------------------------------------------
+# Fonte E — SecLists (XSS e SQLi reais curados pela comunidade)
+# ---------------------------------------------------------------------------
+
+SECLISTS_DIR = RAW_DIR / "seclists"
+
+# Arquivos XSS do SecLists — excluir os muito grandes para não dominar
+SECLISTS_XSS_FILES = [
+    "Fuzzing/XSS/human-friendly/XSS-OFJAAAH.txt",
+    "Fuzzing/XSS/human-friendly/XSS-payloadbox.txt",
+    "Fuzzing/XSS/human-friendly/XSS-With-Context-Jhaddix.txt",
+    "Fuzzing/XSS/human-friendly/XSS-Jhaddix.txt",
+    "Fuzzing/XSS/human-friendly/XSS-Vectors-Mario.txt",
+    "Fuzzing/XSS/human-friendly/XSS-BruteLogic.txt",
+    "Fuzzing/XSS/human-friendly/XSS-RSNAKE.txt",
+    "Fuzzing/XSS/human-friendly/XSS-Somdev.txt",
+    "Fuzzing/XSS/human-friendly/XSS-innerht-ml.txt",
+    "Fuzzing/XSS/human-friendly/XSS-Bypass-Strings-BruteLogic.txt",
+    "Fuzzing/XSS/Polyglots/XSS-Polyglots.txt",
+    "Fuzzing/XSS/Polyglots/XSS-Polyglots-Dmiessler.txt",
+    "Fuzzing/XSS/Polyglots/XSS-Polyglot-Ultimate-0xsobky.txt",
+    "Fuzzing/XSS/robot-friendly/XSS-Cheat-Sheet-PortSwigger.txt",
+    "Fuzzing/XSS/robot-friendly/XSS-EnDe-evation.txt",
+    "Fuzzing/XSS/robot-friendly/XSS-EnDe-h4k.txt",
+    "Fuzzing/XSS/robot-friendly/XSS-EnDe-mario.txt",
+    "Fuzzing/XSS/robot-friendly/XSS-EnDe-xssAttacks.txt",
+    "Fuzzing/XSS/robot-friendly/XSS-Vectors-Mario.txt",
+    "Fuzzing/URI-XSS.fuzzdb.txt",
+    "Fuzzing/HTML5sec-Injections-Jhaddix.txt",
+]
+
+SECLISTS_SQLI_FILES = [
+    "Fuzzing/Databases/SQLi/Generic-SQLi.txt",
+    "Fuzzing/Databases/SQLi/Generic-BlindSQLi.fuzzdb.txt",
+    "Fuzzing/Databases/SQLi/MSSQL.fuzzdb.txt",
+    "Fuzzing/Databases/SQLi/MySQL-SQLi-Login-Bypass.fuzzdb.txt",
+    "Fuzzing/Databases/SQLi/MySQL.fuzzdb.txt",
+    "Fuzzing/Databases/SQLi/Oracle.fuzzdb.txt",
+    "Fuzzing/Databases/SQLi/quick-SQLi.txt",
+    "Fuzzing/Databases/SQLi/SQLi-Polyglots.txt",
+    "Fuzzing/Databases/SQLi/sqli.auth.bypass.txt",
+]
+
+
+def load_seclists() -> pd.DataFrame:
+    """
+    Carrega payloads reais de ataque do SecLists (XSS + SQLi).
+    Filtra linhas vazias, comentários e duplicatas.
+    Limita XSS a 20.000 amostras para não criar desequilíbrio excessivo.
+    """
+    if not SECLISTS_DIR.exists():
+        print("  [AVISO] SecLists não encontrado em data/raw/seclists — pulando.")
+        print("  [INFO]  Execute: git clone --depth=1 --filter=blob:none --sparse")
+        print("          https://github.com/danielmiessler/SecLists data/raw/seclists")
+        return pd.DataFrame(columns=["payload", "label", "source"])
+
+    frames = []
+
+    def _read_file(rel_path: str, label: str) -> list[str]:
+        p = SECLISTS_DIR / rel_path
+        if not p.exists():
+            return []
+        payloads = []
+        for encoding in ("utf-8", "latin-1"):
+            try:
+                with open(p, encoding=encoding, errors="replace") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            payloads.append(line)
+                break
+            except Exception:
+                continue
+        return payloads
+
+    # --- XSS ---
+    xss_payloads = []
+    for rel_path in SECLISTS_XSS_FILES:
+        lines = _read_file(rel_path, "xss")
+        if lines:
+            xss_payloads.extend(lines)
+            print(f"  [OK] SecLists XSS {Path(rel_path).name}: {len(lines)} payloads")
+
+    xss_payloads = list(dict.fromkeys(xss_payloads))  # dedup preservando ordem
+    random.seed(SEED)
+    if len(xss_payloads) > 20000:
+        xss_payloads = random.sample(xss_payloads, 20000)
+
+    if xss_payloads:
+        df_xss = pd.DataFrame({
+            "payload": xss_payloads,
+            "label": "xss",
+            "source": "seclists_xss",
+        })
+        frames.append(df_xss)
+        print(f"  [OK] SecLists XSS total (após dedup/sample): {len(df_xss)}")
+
+    # --- SQLi ---
+    sqli_payloads = []
+    for rel_path in SECLISTS_SQLI_FILES:
+        lines = _read_file(rel_path, "sqli")
+        if lines:
+            sqli_payloads.extend(lines)
+            print(f"  [OK] SecLists SQLi {Path(rel_path).name}: {len(lines)} payloads")
+
+    sqli_payloads = list(dict.fromkeys(sqli_payloads))
+    if sqli_payloads:
+        df_sqli = pd.DataFrame({
+            "payload": sqli_payloads,
+            "label": "sqli",
+            "source": "seclists_sqli",
+        })
+        frames.append(df_sqli)
+        print(f"  [OK] SecLists SQLi total (após dedup): {len(df_sqli)}")
+
+    if not frames:
+        print("  [AVISO] Nenhum arquivo SecLists carregado.")
+        return pd.DataFrame(columns=["payload", "label", "source"])
+
+    return pd.concat(frames, ignore_index=True)
+
+
+# ---------------------------------------------------------------------------
 # Fonte C — Geração sintética de tráfego legítimo ambíguo
 # ---------------------------------------------------------------------------
+
+def _hex_color() -> str:
+    """Gera cor hexadecimal aleatória para templates SVG legítimos."""
+    return format(random.randint(0, 0xFFFFFF), "06X")
+
 
 def build_synthetic_legit(n=15000) -> pd.DataFrame:
     """
@@ -358,6 +485,72 @@ def build_synthetic_legit(n=15000) -> pd.DataFrame:
         lambda: f"action=view&id={random.randint(1,9999)}&format=json",
         lambda: f"method=GET&resource=users&id={random.randint(1,9999)}",
         lambda: f"type=report&month={random.randint(1,12)}&year={random.randint(2020,2026)}&format=pdf",
+
+        # 21 — Prosa natural PT com vocabulário SQL em contexto educacional/profissional
+        lambda: f"tenho experiencia com {random.choice(['select', 'insert', 'update', 'delete'])} em banco de dados",
+        lambda: f"aprendi a fazer selects no curso de {fake.word()} ontem",
+        lambda: f"fiz alguns selects para buscar os dados das tabelas",
+        lambda: f"o comando select retorna os dados onde a condicao é verdadeira",
+        lambda: f"uso o where para filtrar resultados no banco de {fake.word()}",
+        lambda: f"preciso de ajuda com o select from where no meu projeto",
+        lambda: f"quando uso union em queries relacionais preciso cuidar dos tipos",
+        lambda: f"fiz um drop down com as opcoes do banco de dados",
+        lambda: f"o insert into foi bem sucedido e o registro foi salvo",
+        lambda: f"o update na tabela de {fake.word()} atualizou {random.randint(1,100)} linhas",
+        lambda: f"nao consigo entender a diferenca entre delete e truncate",
+        lambda: f"tenho um script python que executa queries no banco",
+        lambda: f"uso o alert do sistema para notificar erros de {fake.word()}",
+
+        # 22 — Prosa natural EN com vocabulário SQL em contexto técnico legítimo
+        lambda: f"i did some selects to get the data from the tables",
+        lambda: f"learned about select from where clauses in my database class today",
+        lambda: f"the query uses a {random.choice(['select', 'where', 'from', 'join'])} clause to filter results",
+        lambda: f"ive done some selects on the {fake_en.word()} table for the report",
+        lambda: f"working with select statements and where conditions in my project",
+        lambda: f"how to use {random.choice(['union', 'join', 'select'])} properly in SQL",
+        lambda: f"the delete operation removed {random.randint(1, 500)} records from {fake_en.word()}",
+        lambda: f"writing a script to automate the {fake_en.word()} insert process",
+        lambda: f"i need help with the select from where query in my assignment",
+        lambda: f"using alert in javascript to debug my {fake_en.word()} application",
+        lambda: f"the script runs every {random.randint(1,24)} hours to update the records",
+        lambda: f"drop the unused columns from the {fake_en.word()} dataframe",
+        lambda: f"studying SQL joins and select statements in computer science",
+
+        # 23 — XML e SVG legítimos sem scripts
+        lambda: f'<?xml version="1.0" encoding="UTF-8"?><root><item id="{random.randint(1,999)}">{fake.word()}</item></root>',
+        lambda: f'<?xml version="1.0" standalone="no"?><data><record>{fake.name()}</record></data>',
+        lambda: f'<svg xmlns="http://www.w3.org/2000/svg" width="{random.randint(100,800)}" height="{random.randint(100,600)}"><rect width="100%" height="100%" fill="#{_hex_color()}"/></svg>',
+        lambda: f'<svg version="1.1" baseProfile="full" xmlns="http://www.w3.org/2000/svg"><circle cx="{random.randint(10,200)}" cy="{random.randint(10,200)}" r="{random.randint(5,100)}" fill="#{_hex_color()}"/></svg>',
+        lambda: f'<svg xmlns="http://www.w3.org/2000/svg"><polygon points="{random.randint(0,50)},{random.randint(0,50)} {random.randint(50,100)},{random.randint(0,50)} {random.randint(0,100)},{random.randint(50,100)}" fill="#{_hex_color()}"/></svg>',
+        lambda: f'<?xml version="1.0"?><config><param name="{fake.word()}" value="{random.randint(1,100)}"/><param name="{fake.word()}" value="{fake.word()}"/></config>',
+        lambda: f'<!DOCTYPE html><html lang="pt-BR"><head><title>{fake.catch_phrase()}</title></head><body><p>{fake.sentence()}</p></body></html>',
+        lambda: f'<svg xmlns="http://www.w3.org/2000/svg"><text x="{random.randint(10,100)}" y="{random.randint(10,100)}" font-size="{random.randint(10,40)}">{fake.word()}</text></svg>',
+        lambda: f'<feed xmlns="http://www.w3.org/2005/Atom"><title>{fake.catch_phrase()}</title><entry><title>{fake.sentence()}</title></entry></feed>',
+        lambda: f'<?xml version="1.0"?><rss version="2.0"><channel><title>{fake.catch_phrase()}</title><description>{fake.sentence()}</description></channel></rss>',
+
+        # 24 — Código e documentação técnica legítima
+        lambda: f"function {fake_en.word()}() {{ return document.getElementById('{fake_en.word()}').value; }}",
+        lambda: f"const {fake_en.word()} = document.querySelector('#{fake_en.word()}');",
+        lambda: f"// TODO: refactor the {fake_en.word()} alert to use a toast notification",
+        lambda: f"console.log('debug: {fake_en.word()} loaded successfully');",
+        lambda: f"var {fake_en.word()} = document.getElementsByClassName('{fake_en.word()}')[0];",
+        lambda: f"document.title = '{fake.catch_phrase()}';",
+        lambda: f"window.location.href = '/dashboard?id={random.randint(1,9999)}';",
+        lambda: f"# python script para processar dados de {fake.word()} com pandas",
+        lambda: f"import pandas as pd; df = pd.read_csv('{fake.word()}.csv')",
+        lambda: f"def select_{fake_en.word()}(conn, table): return conn.execute('SELECT * FROM ' + table)",
+
+        # 25 — Conteúdo de formulários ricos (CMS, blog, fórum)
+        lambda: f"Olá, tenho uma dúvida sobre como usar o alert() em javascript sem ser bloqueado",
+        lambda: f"Como faço um script bash que lê um arquivo e insere no banco de dados?",
+        lambda: f"Alguém sabe como usar o SELECT INTO para copiar dados entre tabelas?",
+        lambda: f"Preciso de ajuda: meu script de backup está dando erro no delete from",
+        lambda: f"Qual a diferença entre document.write e innerHTML no javascript?",
+        lambda: f"How do I use alert() properly in my JavaScript form validation?",
+        lambda: f"My SQL query with SELECT FROM WHERE is returning unexpected results",
+        lambda: f"Looking for help with my Python script that does database selects",
+        lambda: f"Can someone explain how UNION works in SQL for combining query results?",
+        lambda: f"Best practices for using document.getElementById in vanilla javascript",
     ]
 
     # Garantir mínimo de 40 templates
@@ -840,6 +1033,11 @@ def main():
     print("\n[D] Gerando XSS augmentado (técnicas documentadas)...")
     df_xss_aug = build_xss_augmented(n=200_000)
     all_frames.append(df_xss_aug)
+
+    print("\n[E] Carregando SecLists (XSS + SQLi reais)...")
+    df_seclists = load_seclists()
+    if not df_seclists.empty:
+        all_frames.append(df_seclists)
 
     # Concatenar tudo
     df = pd.concat(all_frames, ignore_index=True)
